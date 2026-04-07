@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Invoice App</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+
+      #left {
+        width: 100% !important;
+        height: calc(100vh - 70px);
+      }
+
+      #right { display: none; }
+
+      #viewBillBtn { display: inline-flex; }
+    }
+
+    @media (min-width: 769px) {
+      #viewBillBtn { display: none; }
+      #billDrawer { display: none !important; }
+    }
+
+    .blur-bg {
+      filter: blur(4px);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .drag-handle {
+      cursor: grab;
+      font-size: 18px;
+      padding-right: 8px;
+    }
+
+    .dragging {
+      opacity: 0.5;
+    }
+
+    input, textarea {
+  font-size: 16px;
+}
+  </style>
+</head>
+
+<body class="bg-gray-100 h-screen">
+
+<div id="mainApp" class="flex h-full">
+
+<!-- LEFT -->
+<div id="left" class="w-1/2 bg-white border-r flex flex-col h-full">
+
+  <div class="p-4 border-b bg-white sticky top-0 z-10">
+    <div class="flex justify-between mb-3">
+      <h2 class="text-xl font-bold">🍽 Menu</h2>
+      <button onclick="openModal()" class="bg-indigo-600 text-white px-3 py-1 rounded">
+        + Add
+      </button>
+    </div>
+
+    <input id="search"
+  placeholder="Search item..."
+  class="w-full border p-2 rounded"
+  oninput="renderMenu()"
+  onclick="this.select()"
+  onfocus="this.select()"
+  onkeydown="handleSearchEnter(event)">
+  </div>
+
+  <!-- UNDO BAR -->
+  <div id="undoBar" class="hidden bg-yellow-100 p-2 text-sm flex justify-between items-center">
+    <span>Item deleted</span>
+    <button onclick="undoDelete()" class="text-blue-600 font-bold">UNDO</button>
+  </div>
+
+  <div id="menu" class="flex-1 overflow-y-auto p-4"></div>
+</div>
+
+<!-- RIGHT (DESKTOP) -->
+<div id="right" class="w-1/2 p-6">
+  <h2 class="text-xl font-bold mb-4">🧾 Bill</h2>
+
+  <label class="block mb-3">
+  <input type="checkbox" id="salad" onchange="generate()"> Salad is complimentary
+</label>
+
+<label class="block mb-2">
+  <input type="checkbox" id="delivery" onchange="toggleDeliveryInput()"> Delivery Charge
+</label>
+
+<input id="deliveryInput"
+  type="number"
+  placeholder="Enter delivery charge"
+  class="w-full border p-2 rounded mb-3 hidden"
+  oninput="updateDelivery(this.value)">
+
+  <textarea id="output" class="w-full h-80 border p-3 rounded"></textarea>
+
+  <div class="mt-3 flex gap-2">
+    <button onclick="clearBill()" class="bg-red-500 text-white px-3 py-1 rounded">Clear</button>
+    <button id="copyBtnDesktop" onclick="copyText('desktop')" class="bg-gray-300 px-3 py-1 rounded">Copy</button>
+  </div>
+</div>
+
+</div>
+
+<button id="viewBillBtn"
+  onclick="openBill()"
+  class="fixed bottom-6 left-1/2 -translate-x-1/2 
+         bg-indigo-600 text-white 
+         px-4 py-2.5 rounded-full 
+         inline-flex items-center gap-2 
+         shadow-2xl text-sm font-medium 
+         hidden active:scale-95 transition">
+  <span>🧾</span>
+  <span>View Bill</span>
+</button>
+
+<div id="billDrawer"
+  class="fixed bottom-0 left-0 w-full rounded-t-2xl shadow-2xl p-4 hidden z-50"
+  style="background-color: #ffffff;">
+
+  <div class="flex justify-between items-center mb-2">
+    <h2 class="font-bold text-lg">🧾 Bill</h2>
+    <button onclick="closeBill()">✖</button>
+  </div>
+
+  <label class="block mb-2">
+  <input type="checkbox" id="saladMobile" onchange="generate()"> Salad is complimentary
+</label>
+
+<label class="block mb-2">
+  <input type="checkbox" id="deliveryMobile" onchange="toggleDeliveryInput()"> Delivery Charge
+</label>
+
+<input id="deliveryInputMobile"
+  type="number"
+  placeholder="Enter delivery charge"
+  class="w-full border p-2 rounded mb-2 hidden"
+  oninput="updateDelivery(this.value)">
+
+  <textarea id="outputMobile"
+    class="w-full h-60 border p-2 rounded mb-2"></textarea>
+
+  <div class="flex gap-2">
+    <button onclick="clearBill()" class="bg-red-500 text-white px-3 py-1 rounded w-1/2">Clear</button>
+    <button id="copyBtnMobile" onclick="copyText('mobile')" class="bg-gray-300 px-3 py-1 rounded w-1/2">Copy</button>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden flex items-center justify-center">
+  <div class="bg-white p-5 rounded w-80">
+    <h3 id="modalTitle" class="mb-3 font-bold">Add Item</h3>
+
+    <input id="name" placeholder="Name" class="w-full border p-2 mb-2">
+    <input id="price" type="number" placeholder="Price" class="w-full border p-2 mb-2">
+    <input id="unit" placeholder="Unit (optional)" class="w-full border p-2 mb-2">
+
+    <label class="flex items-center gap-2 text-sm mb-3">
+      <input type="checkbox" id="showPrice">
+      Show price in bill
+    </label>
+
+    <button onclick="saveItem()" class="bg-indigo-600 text-white w-full py-2 mb-2">Save</button>
+    <button onclick="closeModal()" class="bg-gray-300 w-full py-2">Cancel</button>
+  </div>
+</div>
+
+<script>
+// 🔥 DEFAULT MENU (your items)
+const defaultMenu = [
+  { name:"Containers",price:160,unit:"",showPrice:true },
+  { name:"Veg Containers",price:115,unit:"",showPrice:true },
+  { name:"Mutton curry",price:1550,unit:"kg",showPrice:false },
+  { name:"Chicken curry",price:900,unit:"",showPrice:false },
+  { name:"Green chicken",price:1300,unit:"",showPrice:false },
+  { name:"Butter chicken",price:1400,unit:"",showPrice:false },
+  { name:"Pork chilli",price:1200,unit:"kg",showPrice:false },
+  { name:"Pork saute",price:1000,unit:"kg",showPrice:false },
+  { name:"Chicken biryani",price:1000,unit:"kg",showPrice:false },
+  { name:"Chicken tikka biryani",price:1250,unit:"kg",showPrice:false },
+  { name:"White chicken biryani",price:1400,unit:"kg",showPrice:false },
+  { name:"Mutton biryani",price:1600,unit:"kg",showPrice:false },
+  { name:"White mutton biryani",price:1800,unit:"kg",showPrice:false },
+  { name:"Mutton yakhni pulav",price:1600,unit:"kg",showPrice:false },
+  { name:"Red chicken bhujing",price:900,unit:"",showPrice:false },
+  { name:"White chicken bhujing",price:900,unit:"",showPrice:false },
+  { name:"Green chicken bhujing",price:900,unit:"",showPrice:false },
+  { name:"Full chicken bhujing",price:800,unit:"",showPrice:false },
+  { name:"Vatana pulav",price:800,unit:"kg",showPrice:false },
+  { name:"Flower vatana bhaji",price:700,unit:"kg",showPrice:false },
+  { name:"Patties",price:25,unit:"",showPrice:true },
+  { name:"Veg Patties",price:20,unit:"",showPrice:false },
+  { name:"Gulgule",price:500,unit:"kg",showPrice:false },
+  { name:"Masala Gulgule",price:600,unit:"kg",showPrice:false },
+  { name:"Plain rice",price:120,unit:"kg",showPrice:false },
+  { name:"Sorpotel",price:1000,unit:"vajdi phohis",showPrice:false },
+  { name:"Vindyal",price:900,unit:"",showPrice:false },
+  { name:"Chicken pakoda",price:800,unit:"",showPrice:false },
+  { name:"French bean bhaji",price:800,unit:"kg",showPrice:false },
+  { name:"Roast Chicken",price:1000,unit:"",showPrice:false },
+  { name:"Mutton Keema",price:1600,unit:"kg",showPrice:false },
+  { name:"Dal",price:250,unit:"kg",showPrice:false }
+];
+
+// 🔥 USE LOCAL OR DEFAULT
+let storedMenu = JSON.parse(localStorage.getItem("menu"));
+
+let menu = storedMenu && storedMenu.length > 0
+  ? storedMenu
+  : defaultMenu;
+
+menu = menu.map(i => ({
+  ...i,
+  selected: false,
+  qty: 0
+}));
+
+let editIndex = null;
+
+// 🔥 UNDO STORAGE
+let lastDeleted = null;
+let deliveryCharge = 0;
+let focusItemIndex = null;
+let pendingScrollIndex = null;
+let lastScrollTop = 0;
+
+function showUndo() {
+  let undoDiv = document.getElementById("undoToast");
+
+  if (!undoDiv) {
+    undoDiv = document.createElement("div");
+    undoDiv.id = "undoToast";
+    undoDiv.className = "fixed bottom-20 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-lg shadow-xl flex items-center gap-3 w-[90%] max-w-md justify-between";
+    document.body.appendChild(undoDiv);
+  }
+
+  undoDiv.innerHTML = `
+    Item deleted
+    <button onclick="undoDelete()" class="bg-white text-black px-2 py-1 rounded">Undo</button>
+  `;
+
+  undoDiv.style.display = "flex";
+
+  clearTimeout(undoDiv.timeout);
+  undoDiv.timeout = setTimeout(() => {
+    undoDiv.style.display = "none";
+    lastDeleted = null;
+  }, 5000);
+}
+
+function undoDelete() {
+  if (!lastDeleted) return;
+
+  menu.splice(lastDeleted.index, 0, lastDeleted.item);
+
+  localStorage.setItem("menu", JSON.stringify(menu));
+
+  renderMenu();
+  generate();
+
+  document.getElementById("undoToast").style.display = "none";
+  lastDeleted = null;
+}
+
+function openModal(index = null) {
+  document.getElementById("modal").classList.remove("hidden");
+  document.getElementById("mainApp").classList.add("blur-bg");
+
+  if (index !== null) {
+    editIndex = index;
+    const item = menu[index];
+
+    document.getElementById("name").value = item.name;
+    document.getElementById("price").value = item.price;
+    document.getElementById("unit").value = item.unit;
+    document.getElementById("showPrice").checked = item.showPrice === true;
+
+    document.getElementById("modalTitle").innerText = "Edit Item";
+  } else {
+    editIndex = null;
+    document.getElementById("name").value = "";
+    document.getElementById("price").value = "";
+    document.getElementById("unit").value = "";
+    document.getElementById("showPrice").checked = false;
+
+    document.getElementById("modalTitle").innerText = "Add Item";
+  }
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.add("hidden");
+  document.getElementById("mainApp").classList.remove("blur-bg");
+}
+
+function openBill() {
+  document.getElementById("billDrawer").classList.remove("hidden");
+  document.getElementById("overlay").classList.remove("hidden");
+}
+
+function closeBill() {
+  document.getElementById("billDrawer").classList.add("hidden");
+  document.getElementById("overlay").classList.add("hidden");
+}
+
+function saveItem() {
+  const name = document.getElementById("name").value.trim();
+  const price = parseFloat(document.getElementById("price").value);
+  const unit = document.getElementById("unit").value.trim();
+  const showPrice = document.getElementById("showPrice").checked;
+
+  if (!name || isNaN(price)) return alert("Fill properly");
+
+  if (editIndex !== null) {
+    const old = menu[editIndex];
+    menu[editIndex] = { ...old, name, price, unit, showPrice };
+  } else {
+  menu.push({ name, price, unit, qty: 1, selected: true, showPrice });  }
+
+  localStorage.setItem("menu", JSON.stringify(menu));
+  closeModal();
+  renderMenu();
+  generate();
+
+  // scroll to newly added item
+  setTimeout(() => {
+  const el = document.getElementById(`item-${menu.length - 1}`);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 0);
+}
+
+
+function toggleDeliveryInput() {
+  const d = document.getElementById("delivery")?.checked;
+  const m = document.getElementById("deliveryMobile")?.checked;
+
+  const show = d || m;
+
+  document.getElementById("deliveryInput")?.classList.toggle("hidden", !show);
+  document.getElementById("deliveryInputMobile")?.classList.toggle("hidden", !show);
+
+  if (!show) {
+    deliveryCharge = 0;
+
+    if (document.getElementById("deliveryInput"))
+      document.getElementById("deliveryInput").value = "";
+
+    if (document.getElementById("deliveryInputMobile"))
+      document.getElementById("deliveryInputMobile").value = "";
+
+    generate();
+  }
+}
+
+function updateDelivery(val) {
+  deliveryCharge = parseFloat(val) || 0;
+
+  if (document.getElementById("deliveryInput"))
+    document.getElementById("deliveryInput").value = val;
+
+  if (document.getElementById("deliveryInputMobile"))
+    document.getElementById("deliveryInputMobile").value = val;
+
+  generate();
+}
+
+// 🔥 UPDATED DELETE WITH UNDO
+function deleteItem(i) {
+  lastDeleted = {
+    item: menu[i],
+    index: i
+  };
+
+  menu.splice(i, 1);
+
+  localStorage.setItem("menu", JSON.stringify(menu));
+
+  renderMenu();
+  generate();
+
+  showUndo();
+}
+
+function renderMenu() {
+  const div = document.getElementById("menu");
+  const search = document.getElementById("search").value.toLowerCase();
+
+  div.innerHTML = "";
+  let found = false;
+
+  menu
+  .map((item, i) => ({ item, i })) // keep original index
+.sort((a, b) => b.item.selected - a.item.selected)
+
+.forEach(({ item, i }) => {
+
+    if (!item.name.toLowerCase().includes(search)) return;
+
+    found = true;
+
+    const el = document.createElement("div");
+    el.className = "border p-3 mb-3 rounded " + (item.selected ? "bg-green-50" : "");
+    el.id = `item-${i}`;
+
+    el.innerHTML = `
+      <div class="flex justify-between">
+        <div>
+          <input type="checkbox"
+            ${item.selected ? "checked" : ""}
+            onchange="toggle(${i}, this.checked)">
+          <b>${item.name}</b><br>
+          <small>₹${item.price}${item.unit ? "/" + item.unit : ""}</small>
+        </div>
+
+        <div>
+          <button onclick="openModal(${i})" class="text-blue-500">Edit</button><br>
+          <button onclick="deleteItem(${i})" class="text-red-500">Delete</button>
+        </div>
+      </div>
+
+      ${
+        item.selected
+          ? `<div class="mt-2">
+              <input type="number"
+                id="qty-${i}"
+                placeholder="Qty"
+                class="border p-2 w-24 rounded text-sm"
+                value="${item.qty || ''}"
+                onchange="updateQty(${i}, this.value)">
+            </div>`
+          : ""
+      }
+    `;
+
+    div.appendChild(el);
+  });
+
+if (!found && search.trim() !== "") {
+  const el = document.createElement("div");
+  el.className = "border p-3 rounded text-center bg-gray-50";
+
+  el.innerHTML = `
+    <p class="mb-2">No item found</p>
+    <button onclick="quickAddItem('${capitalize(search)}')"
+      class="bg-indigo-600 text-white px-3 py-1 rounded">
+      + Add "${capitalize(search)}" to menu
+    </button>
+  `;
+
+  div.appendChild(el);
+}
+
+// ✅ focus qty AFTER render
+if (focusItemIndex !== null) {
+  setTimeout(() => {
+    const qty = document.getElementById(`qty-${focusItemIndex}`);
+    if (qty) {
+      qty.focus();
+      qty.select();
+    }
+    focusItemIndex = null;
+  }, 0);
+}
+
+}
+
+function toggle(i, checked) {
+  menu[i].selected = checked;
+
+  if (!checked) {
+    menu[i].qty = 0;
+  } else if (!menu[i].qty) {
+    menu[i].qty = 1;
+  }
+
+  if (checked) {
+    focusItemIndex = i;
+  }
+
+  renderMenu();
+  generate();
+
+  // ✅ ONLY MOBILE scroll behavior
+  if (checked && window.innerWidth <= 768) {
+    setTimeout(() => {
+      const el = document.getElementById(`item-${i}`);
+      if (el) {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "center"
+        });
+      }
+    }, 100);
+  }
+}
+
+function updateQty(i, val) {
+  menu[i].qty = parseFloat(val) || 0;
+  generate();
+
+
+}
+
+function generate() {
+  let text = "";
+  let total = 0;
+
+  menu.forEach(item => {
+    if (item.selected && item.qty > 0) {
+      let t = item.qty * item.price;
+      total += t;
+
+      const unitText = item.unit ? ` ${item.unit}` : "";
+
+      text += item.showPrice
+        ? `${item.qty}${unitText} ${item.name} x ₹${item.price}: ₹${t}\n`
+        : `${item.qty}${unitText} ${item.name}: ₹${t}\n`;
+    }
+  });
+
+  if (
+    document.getElementById("salad")?.checked ||
+    document.getElementById("saladMobile")?.checked
+  ) {
+    text += "\nSalad is complimentary\n";
+  }
+
+if (deliveryCharge > 0) {
+  text += `Delivery Charge: ₹${deliveryCharge}\n`;
+  total += deliveryCharge;
+}
+
+text += `\n*Total: ₹${total}*\n\nThank you for ordering!`;
+
+  document.getElementById("output").value = text;
+  document.getElementById("outputMobile").value = text;
+}
+
+function handleCheckboxKey(e) {
+  if (e.key === " " || e.code === "Space") {
+    e.preventDefault();
+
+    const checkbox = e.target;
+
+    // Find index from onchange attribute
+    const match = checkbox.getAttribute("onchange").match(/\d+/);
+    if (!match) return;
+
+    const i = match[0];
+
+    checkbox.checked = !checkbox.checked;
+
+    toggle(i, checkbox.checked);
+
+    // Wait for re-render
+    setTimeout(() => {
+      const qtyInput = document.getElementById(`qty-${i}`);
+      if (qtyInput) {
+        qtyInput.focus();
+        qtyInput.select();
+      }
+    }, 0);
+  }
+}
+
+function handleSearchEnter(e) {
+  if (e.key === "Enter") {
+    const search = document.getElementById("search").value.trim();
+
+    if (!search) return;
+
+    // check if item exists
+    const exists = menu.some(item =>
+      item.name.toLowerCase() === search.toLowerCase()
+    );
+
+    if (!exists) {
+      quickAddItem(capitalize(search));
+    }
+  }
+}
+
+function clearBill() {
+  // Reset items
+  menu.forEach(i => {
+    i.selected = false;
+    i.qty = 0;
+  });
+
+  // Reset delivery
+  deliveryCharge = 0;
+
+  // Uncheck delivery checkboxes
+  if (document.getElementById("delivery"))
+    document.getElementById("delivery").checked = false;
+
+  if (document.getElementById("deliveryMobile"))
+    document.getElementById("deliveryMobile").checked = false;
+
+  // Hide delivery inputs
+  if (document.getElementById("deliveryInput"))
+    document.getElementById("deliveryInput").classList.add("hidden");
+
+  if (document.getElementById("deliveryInputMobile"))
+    document.getElementById("deliveryInputMobile").classList.add("hidden");
+
+  // Clear delivery values
+  if (document.getElementById("deliveryInput"))
+    document.getElementById("deliveryInput").value = "";
+
+  if (document.getElementById("deliveryInputMobile"))
+    document.getElementById("deliveryInputMobile").value = "";
+
+  // Reset bill text
+  document.getElementById("output").value = "";
+  document.getElementById("outputMobile").value = "";
+
+  renderMenu();
+}
+
+function capitalize(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function resetMenu() {
+  localStorage.removeItem("menu");
+  location.reload();
+}
+
+function quickAddItem(name) {
+  openModal();
+  document.getElementById("name").value = name;
+
+  setTimeout(() => {
+    document.getElementById("price").focus();
+  }, 100);
+}
+
+function copyText(type) {
+  const text = type === "mobile"
+    ? document.getElementById("outputMobile").value
+    : document.getElementById("output").value;
+
+  const btn = type === "mobile"
+    ? document.getElementById("copyBtnMobile")
+    : document.getElementById("copyBtnDesktop");
+
+  navigator.clipboard.writeText(text);
+
+  btn.innerText = "Copied ✓";
+  btn.classList.remove("bg-gray-300");
+  btn.classList.add("bg-green-500", "text-white");
+
+  setTimeout(() => {
+    btn.innerText = "Copy";
+    btn.classList.remove("bg-green-500", "text-white");
+    btn.classList.add("bg-gray-300");
+  }, 5000);
+}
+
+// 🔥 Keyboard shortcut "/" to focus search
+// 🔥 GLOBAL "/" SHORTCUT → ALWAYS FOCUS SEARCH
+document.addEventListener("keydown", function (e) {
+  if (e.key === "/") {
+    e.preventDefault();
+
+    const search = document.getElementById("search");
+    if (search) {
+      search.focus();
+      search.select();
+    }
+  }
+});
+
+renderMenu();
+generate();
+</script>
+
+<div id="overlay"
+  class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden z-40"
+  onclick="closeBill()"></div>
+
+</body>
+</html>
